@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+agentcore/.env.local
+.env
+agentcore/.env.local
