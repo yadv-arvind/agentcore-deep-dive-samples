@@ -8,7 +8,7 @@ Sample code for a deep dive into building agents with [Strands Agents](https://s
 |:-----|:--------------|
 | [`00-strands-spec-coder/`](./00-strands-spec-coder/) | Planner, coder and reviewer agents that implement a change in a local repo, with an independent check of the result |
 | [`settings.py`](./settings.py) | Loads `.env` and `resources.yaml`. Every sample imports it with `from settings import settings`. |
-| [`resources.yaml`](./resources.yaml) | Non-secret settings: model ID, GitHub defaults, tracker and documentation domains |
+| [`resources.yaml`](./resources.yaml) | Non-secret settings: the Bedrock model ID |
 | [`.env.example`](./.env.example) | Template for the environment variables and secrets. Copy it to `.env`. |
 | [`requirements.txt`](./requirements.txt) | Pinned Python dependencies |
 | [`setup.sh`](./setup.sh) | The first-time setup commands, in order |
@@ -48,7 +48,7 @@ uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -r requirements.txt
 
-# 2. Configure: edit .env, set AWS_REGION, and remove or comment out AWS_PROFILE unless you use a named profile
+# 2. Configure: edit .env and set AWS_REGION. Uncomment AWS_PROFILE only if you use a named profile.
 cp .env.example .env
 ```
 
@@ -58,7 +58,6 @@ Then follow [`00-strands-spec-coder/README.md`](./00-strands-spec-coder/README.m
 
 - Replace `<you>` in the `gh repo create` line with your GitHub username.
 - The `mkdir agentcore-deep-dive-samples` line creates this repo from scratch. Skip it, because you already have the repo.
-- The `cp .env.example .env` line only works once `.env.example` exists.
 
 ## Results snapshot
 
@@ -82,13 +81,8 @@ Secrets go in `.env`, which git ignores. Everything else goes in `resources.yaml
 | Setting | File | Description |
 |:--------|:-----|:------------|
 | `AWS_REGION` | `.env` | Required. Use a US region for the Nova Pro model ID. |
-| `AWS_PROFILE` | `.env` | Optional. Leave the line out unless you use a named profile. |
+| `AWS_PROFILE` | `.env` | Optional. Commented out in `.env.example`. Set it only if you use a named profile. |
 | `model_id` | `resources.yaml` | Bedrock model ID, `us.amazon.nova-pro-v1:0` |
-| `github` | `resources.yaml` | API base, default repo, base branch and branch prefix |
-| `tracker` | `resources.yaml` | Tracker URL and project key. `base_url` is still a placeholder. |
-| `docs.allowed_domains` | `resources.yaml` | Documentation sites the agents may read |
-
-The other variables in `.env.example` belong to later components and are not used yet.
 
 ## Clean up
 

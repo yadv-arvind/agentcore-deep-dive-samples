@@ -67,7 +67,7 @@ uv pip install -r requirements.txt
 
 # 2. Configure
 cp .env.example .env
-# Edit .env: set AWS_REGION, and remove or comment out the AWS_PROFILE line unless you use a named profile
+# Edit .env: set AWS_REGION. Uncomment AWS_PROFILE only if you use a named profile.
 
 # 3. Plan only: prints the spec and writes nothing
 cd 00-strands-spec-coder
@@ -304,11 +304,9 @@ No problems found.
 | Setting | Where | Description |
 |:--------|:------|:------------|
 | `AWS_REGION` | `.env` | Required. `settings.py` exits if it is missing. |
-| `AWS_PROFILE` | `.env` | Optional. Leave the line out or commented out when you do not use a named profile. An empty value breaks `boto3`. |
+| `AWS_PROFILE` | `.env` | Optional. Commented out in `.env.example`. Set it only if you use a named profile. An empty value breaks `boto3`. |
 | `PITWALL_RESOURCES` | environment | Path to the resources file. `run.py` defaults it to `resources.yaml` in the repository root. |
 | `model_id` | `resources.yaml` | The Bedrock model ID, `us.amazon.nova-pro-v1:0`. |
-
-The other variables in `.env.example` belong to later components and are not read by this sample.
 
 ## Project structure
 
