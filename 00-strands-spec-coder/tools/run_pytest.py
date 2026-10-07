@@ -16,13 +16,14 @@ def run_pytest(args: str = "", cwd: str = ".") -> str:
         args: Extra pytest arguments, for example "tests/test_items.py -k health".
         cwd: Directory to run pytest in. Defaults to the current directory.
     """
+    project = Path(cwd).resolve()
     # Prefer the target project's own virtual environment over this one.
-    project_python = Path(cwd) / ".venv" / "bin" / "python"
+    project_python = project / ".venv" / "bin" / "python"
     python = str(project_python) if project_python.exists() else sys.executable
     try:
         result = subprocess.run(
             [python, "-m", "pytest", "-q", *shlex.split(args)],
-            cwd=cwd,
+            cwd=project,
             capture_output=True,
             text=True,
             timeout=120,

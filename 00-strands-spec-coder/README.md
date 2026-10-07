@@ -284,11 +284,11 @@ No problems found.
 
 1. `run.py` — parses the arguments, adds the repo root to the import path, sets `PITWALL_RESOURCES` to `resources.yaml`, and changes into the target repo so relative paths resolve there.
 2. `run.py` — builds a file listing with `git ls-files` (tracked and untracked, minus ignored files) and puts it in the planner's request, so the model does not type paths itself.
-3. `agents.py` — `make_spec` calls the planner with `structured_output_model=Spec`. This runs the full tool loop, so the planner can call `file_read` before it answers.
+3. `agents/planner.py` — `make_spec` calls the planner with `structured_output_model=Spec`. This runs the full tool loop, so the planner can call `file_read` before it answers.
 4. `run.py` — stops if the spec has no tasks or names a file in a directory that does not exist. It lists files the plan will create, and asks `Proceed with implementation? [y/N]`.
 5. `run.py` — records the test ids and the changed files before the orchestrator starts.
-6. `agents.py` — the orchestrator calls `implement_task` and then `review_change` for each task. The coder prompt says to read a file before changing it, write back the whole file with existing code kept, and stop after four attempts.
-7. `local_tools.py` — `run_pytest` runs `pytest -q` with the target repo's `.venv` when one exists. It has a 120-second timeout and returns the last 4,000 characters of output.
+6. `agents/orchestrator.py` — the orchestrator calls `tools/implement_task.py` and then `tools/review_change.py` for each task. Those tools run `agents/coder.py` and `agents/reviewer.py`. The coder prompt says to read a file before changing it, write back the whole file with existing code kept, and stop after four attempts.
+7. `tools/run_pytest.py` — `run_pytest` runs `pytest -q` with the target repo's `.venv` when one exists. It has a 120-second timeout and returns the last 4,000 characters of output.
 8. `run.py` — `verify` compares the repo with the snapshot and runs the suite again. It reports `NEEDS REVIEW`, and exits with code 1, if a file outside the spec changed, a file lost more lines than it gained, a test disappeared, or `pytest` fails.
 
 ## Key concepts
@@ -314,9 +314,16 @@ The other variables in `.env.example` belong to later components and are not rea
 
 | File | Description |
 |:-----|:------------|
-| `agents.py` | The `Spec` and `Task` models, the four agents, `make_spec`, and the `implement_task` and `review_change` tools |
 | `run.py` | Entry point: file listing, planning, spec checks, confirmation, orchestration and the independent check |
-| `local_tools.py` | The `run_pytest` tool |
+| `agents/planner.py` | The planner agent and `make_spec` |
+| `agents/coder.py` | The coder agent |
+| `agents/reviewer.py` | The reviewer agent |
+| `agents/orchestrator.py` | The orchestrator agent |
+| `agents/spec.py` | The `Spec` and `Task` Pydantic models |
+| `agents/model.py` | The Bedrock model that every agent shares |
+| `tools/implement_task.py` | Tool that runs the coder on one task |
+| `tools/review_change.py` | Tool that runs the reviewer on a change |
+| `tools/run_pytest.py` | Tool that runs `pytest` in the target repo |
 | `hooks.py` | `ToolLog`, a hook that prints each tool call. `run.py --verbose` attaches it to every agent. |
 
 `settings.py`, `resources.yaml` and `requirements.txt` live in the repository root.

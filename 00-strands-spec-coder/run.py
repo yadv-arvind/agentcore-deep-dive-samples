@@ -136,18 +136,22 @@ def main() -> int:
         print(f"Repository not found: {repo}", file=sys.stderr)
         return 1
 
-    import agents                                            # loads settings, so import after the path setup
+    # These imports load settings, so they come after the path setup above.
+    from agents.coder import coder
+    from agents.orchestrator import orchestrator
+    from agents.planner import make_spec, planner
+    from agents.reviewer import reviewer
     from hooks import ToolLog
 
     if args.verbose:
-        for agent in (agents.planner, agents.coder, agents.reviewer, agents.orchestrator):
+        for agent in (planner, coder, reviewer, orchestrator):
             agent.hooks.add_hook(ToolLog())
 
     # Relative paths in the spec and the default run_pytest directory now resolve inside the repo.
     os.chdir(repo)
 
     print(f"Planning in {repo} ...")
-    spec = agents.make_spec(
+    spec = make_spec(
         f"{args.request}\n\n"
         f"The current directory is the repository. Its files, as relative paths:\n{list_repo_files(repo)}\n\n"
         "Read the files the change touches with exactly these relative paths before planning."
@@ -181,7 +185,7 @@ def main() -> int:
     print(f"\nBaseline: {len(tests_before)} tests collected.")
 
     print("\nImplementing ...")
-    result = agents.orchestrator(
+    result = orchestrator(
         f"Repository: {repo}\n\nSpec:\n{spec_json}\n\n"
         "Implement every task in the spec, reviewing each one, and report the outcome."
     )
