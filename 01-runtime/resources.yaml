@@ -1,0 +1,12 @@
+model_id: us.amazon.nova-pro-v1:0
+github:
+  api_base: https://api.github.com
+  default_repo: yadv-arvind/shop-api
+  base_branch: main
+  branch_prefix: devagent/
+tracker:
+  base_url: https://<your-tracker>/rest/api/3
+  project: SHOP
+docs:
+  allowed_domains: [fastapi.tiangolo.com, docs.pydantic.dev, docs.pytest.org]
+

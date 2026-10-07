@@ -1,0 +1,2 @@
+Snapshot of yadv-arvind/shop-api at commit f406de9, taken with git archive (tracked files only).
+The deployed agents work on this copy because a Runtime session has no access to your local repo.
