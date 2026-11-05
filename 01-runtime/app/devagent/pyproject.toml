@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "devagent"
+version = "0.1.0"
+description = "Spec-first coding agents on AgentCore Runtime, built with Strands Agents"
+requires-python = ">=3.10"
+dependencies = [
+    "aws-opentelemetry-distro ~= 0.18.0",
+    "bedrock-agentcore[strands-agents] >= 1.18.1",
+    "botocore[crt] >= 1.35.0",
+    "strands-agents >= 1.58.1",
+    "strands-agents-tools >= 0.8.9",
+    "pydantic >= 2.13.5",
+    "pyyaml >= 6.0.3",
+    "python-dotenv >= 1.2.4",
+    # run_pytest runs the workspace snapshot's tests with this environment's Python
+    "pytest >= 8.0",
+    "fastapi >= 0.115",
+    "httpx >= 0.27",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

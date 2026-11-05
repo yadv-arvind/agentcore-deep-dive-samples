@@ -1,0 +1,12 @@
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# The repository root ignores lib/ for Python; this one holds the stack definition
+!lib/
