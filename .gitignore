@@ -221,3 +221,6 @@ __marimo__/
 agentcore/.env.local
 .env
 agentcore/.env.local
+
+# macOS
+.DS_Store
