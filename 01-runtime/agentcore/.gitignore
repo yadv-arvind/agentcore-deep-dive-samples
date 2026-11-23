@@ -11,5 +11,9 @@ cdk/node_modules/
 # Ephemeral Staging
 .cache/*
 
-# Exception: Commit the State
-!.cli/deployed-state.json
+# Deployment state holds the account ID and resource ARNs
+.cli/deployed-state.json
+
+# Output of agentcore package
+/devagent/
+/devagent.zip
