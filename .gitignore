@@ -224,3 +224,6 @@ agentcore/.env.local
 
 # macOS
 .DS_Store
+
+# Deployment targets hold your AWS account ID: copy aws-targets.example.json to aws-targets.json
+**/agentcore/aws-targets.json

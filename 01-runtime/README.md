@@ -80,7 +80,7 @@ You should see:
 | `model_id` | `app/devagent/resources.yaml` | The Bedrock model ID, `us.amazon.nova-pro-v1:0` |
 | `runtimeVersion` | `agentcore/agentcore.json` | The Runtime's Python version, `PYTHON_3_14`. The agents were tested locally on Python 3.12. |
 | `idleRuntimeSessionTimeout` | `agentcore/agentcore.json` | Idle session timeout in seconds. It is `60` so the session-expiry experiment is quick. |
-| `aws-targets.json` | `agentcore/` | The account and region to deploy to. It is an empty list, so add a target before you deploy. |
+| `aws-targets.json` | `agentcore/` | The account and region to deploy to. Git ignores it because it holds your account ID. Copy `aws-targets.example.json` to `aws-targets.json` and edit it before you deploy. |
 
 ## Project structure
 
@@ -89,7 +89,8 @@ The layout is the one `agentcore create` generates: the CLI project in `agentcor
 | Path | Description |
 |:-----|:------------|
 | `agentcore/agentcore.json` | Runtime config: name, `CodeZip` build, `main.py` entrypoint, `PUBLIC` network, `HTTP` protocol and the idle timeout |
-| `agentcore/aws-targets.json` | Deployment targets. Empty for now. |
+| `agentcore/aws-targets.json` | Deployment targets. Ignored by git. Start from `aws-targets.example.json`. |
+| `agentcore/aws-targets.example.json` | Example target with a placeholder account ID |
 | `agentcore/cdk/` | The CDK project that `agentcore deploy` uses |
 | `app/devagent/main.py` | The Runtime entrypoint: `run`, `start`, `status` and `watch` actions, and a background job per session |
 | `app/devagent/progress.py` | `ProgressHook`, which turns tool calls into progress events |
