@@ -13,4 +13,8 @@ coder = Agent(model=model, tools=[file_read, file_write, run_pytest],
                    "Before changing a file, read it. file_write replaces the whole file, so write back the complete "
                    "file with every existing function, endpoint and test kept exactly as it was, and add or change "
                    "only what the task needs. Add new tests to the existing test file. Never delete or rewrite "
-                   "existing tests, and never create a new file when the task names an existing one."))
+                   "existing tests, and never create a new file when the task names an existing one. "
+                   "In FastAPI, routes match in the order they are declared. A 422 from a new route such as "
+                   "/items/count usually means an earlier route with a path parameter, such as /items/{item_id}, "
+                   "matched first: declare fixed paths above parameterised ones with the same prefix, and when "
+                   "you add a route, place it above any such route."))

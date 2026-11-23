@@ -32,6 +32,8 @@ from agents.orchestrator import orchestrator
 from agents.planner import make_spec, planner
 from agents.reviewer import reviewer
 from progress import ProgressHook
+from tools.review_change import review_change
+from verify import check_spec_paths, collect_tests, verify
 
 app = BedrockAgentCoreApp()
 log = app.logger
@@ -62,7 +64,7 @@ def _run_job(job: dict, request: str) -> None:
     ping_task = app.add_async_task("devagent_build")        # /ping reports HealthyBusy until this completes
     _current["job"] = job
     try:
-        repo = Path(tempfile.mkdtemp(prefix="job-")) / "shop-api"
+        repo = Path(tempfile.mkdtemp(prefix="job-")).resolve() / "shop-api"
         shutil.copytree(WORKSPACE, repo)
         os.chdir(repo)                                       # the agents use relative paths
         job["status"] = "planning"
@@ -73,15 +75,31 @@ def _run_job(job: dict, request: str) -> None:
         )
         if not spec.tasks:
             raise RuntimeError("The planner returned a spec with no tasks.")
+        invented = check_spec_paths(spec, repo)
+        if invented:
+            raise RuntimeError("The spec refers to paths that do not exist, so the plan is probably invented: " + "; ".join(invented))
         _emit(job, "spec_ready", tasks=[t.title for t in spec.tasks])
+        tests_before = collect_tests(repo)
+        _emit(job, "baseline", tests=len(tests_before))
         job["status"] = "coding"
+        spec_json = spec.model_dump_json(indent=2)
         result = orchestrator(
-            f"Repository: {repo}\n\nSpec:\n{spec.model_dump_json(indent=2)}\n\n"
-            "Implement every task in the spec, reviewing each one, and report the outcome."
+            f"Repository: {repo}\n\nSpec:\n{spec_json}\n\n"
+            "Implement every task in the spec, then call review_change for that task, whatever the test result. "
+            "Report the outcome."
         )
         job["summary"] = str(result)
+        job["status"] = "verifying"
+        report = verify(WORKSPACE, repo, spec, tests_before)
+        reviews = sum(1 for e in job["events"] if e["event"] == "task_reviewed")
+        if reviews < len(spec.tasks):                        # the orchestrator skipped a review: do it from code
+            verdict = str(review_change(spec_json, ", ".join(report["files"]) or "none"))
+            _emit(job, "final_review", approved=verdict.strip().startswith("APPROVE"), reason=verdict[:400])
+        _emit(job, "changes", diff=report.pop("diff"))
+        _emit(job, "verified", **report)
+        job["verified"] = report["ok"]
         job["status"] = "done"
-        _emit(job, "done")
+        _emit(job, "done", verified=report["ok"])
     except Exception as exc:                                 # report any failure through status
         job["status"] = "failed"
         job["error"] = f"{type(exc).__name__}: {exc}"
@@ -125,7 +143,7 @@ async def _follow(job: dict):
 def _begin(job_id: str, text) -> tuple[dict | None, dict | None]:
     """Start a job for this session. Returns (job, None), or (None, rejection)."""
     existing = JOBS.get(job_id)
-    if existing and existing["status"] in ("starting", "planning", "coding"):
+    if existing and existing["status"] in ("starting", "planning", "coding", "verifying"):
         return None, {"event": "rejected", "reason": "a job is already running, send watch to follow it", "job_id": job_id}
     if not isinstance(text, str) or not text.strip():
         return None, {"event": "rejected", "reason": 'start and run need a non-empty "request"'}

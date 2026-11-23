@@ -1,4 +1,5 @@
 import json
+import re
 
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
@@ -24,6 +25,25 @@ def _task_title(tool_input: dict) -> str:
     return first_line[:80]
 
 
+PYTEST_SUMMARY = re.compile(r"\d+ (passed|failed|errors?|skipped)|no tests ran")
+
+
+def _test_summary(text: str) -> str:
+    """The exit code plus the pytest summary line, or the last line of output when there is none."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    summary = next((line for line in reversed(lines[1:]) if PYTEST_SUMMARY.search(line)), lines[-1])
+    return f"{lines[0]}: {summary}" if len(lines) > 1 else lines[0]
+
+
+def _failures(text: str, limit: int = 4) -> list[str]:
+    """The FAILED and error lines pytest prints, so a failed run says which test and why."""
+    lines = [line.strip() for line in text.splitlines()]
+    picked = [line[:200] for line in lines if line.startswith(("FAILED", "ERROR", "E "))]
+    return picked[:limit]
+
+
 class ProgressHook(HookProvider):
     """Turn tool calls into progress events. emit(name, **fields) receives each event."""
 
@@ -42,7 +62,11 @@ class ProgressHook(HookProvider):
         name = event.tool_use["name"]
         text = _result_text(event.result).strip()
         if name == "run_pytest":
-            last_line = text.splitlines()[-1] if text else ""
-            self.emit("tests_passed" if text.startswith("exit code 0") else "tests_failed", summary=last_line)
+            if text.startswith("exit code 0"):
+                self.emit("tests_passed", summary=_test_summary(text))
+            else:
+                self.emit("tests_failed", summary=_test_summary(text), failures=_failures(text))
         elif name == "review_change":
-            self.emit("task_reviewed", approved=text.startswith("APPROVE"))
+            approved = text.startswith("APPROVE")
+            fields = {} if approved else {"reason": text[:400]}
+            self.emit("task_reviewed", approved=approved, **fields)
