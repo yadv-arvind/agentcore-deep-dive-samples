@@ -9,10 +9,19 @@ def _result_text(result: dict) -> str:
 
 
 def _task_title(tool_input: dict) -> str:
-    try:
-        return json.loads(tool_input.get("task_json", "")).get("title", "")
-    except (ValueError, AttributeError):
-        return ""
+    raw = tool_input.get("task_json", "")
+    if isinstance(raw, dict):
+        parsed = raw
+    else:
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            parsed = None
+    if isinstance(parsed, dict) and parsed.get("title"):
+        return str(parsed["title"])
+    # The model may pass plain text instead of JSON: use its first line.
+    first_line = str(raw).strip().splitlines()[0] if str(raw).strip() else ""
+    return first_line[:80]
 
 
 class ProgressHook(HookProvider):

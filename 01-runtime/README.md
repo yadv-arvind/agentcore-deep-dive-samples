@@ -91,7 +91,7 @@ The layout is the one `agentcore create` generates: the CLI project in `agentcor
 | `agentcore/agentcore.json` | Runtime config: name, `CodeZip` build, `main.py` entrypoint, `PUBLIC` network, `HTTP` protocol and the idle timeout |
 | `agentcore/aws-targets.json` | Deployment targets. Empty for now. |
 | `agentcore/cdk/` | The CDK project that `agentcore deploy` uses |
-| `app/devagent/main.py` | The Runtime entrypoint: `start`, `status` and `watch` actions, and a background job per session |
+| `app/devagent/main.py` | The Runtime entrypoint: `run`, `start`, `status` and `watch` actions, and a background job per session |
 | `app/devagent/progress.py` | `ProgressHook`, which turns tool calls into progress events |
 | `app/devagent/pyproject.toml` | Agent dependencies, including the SDK and the snapshot's test dependencies |
 | `app/devagent/agents/` | Copy of `00-strands-spec-coder/agents`: planner, coder, reviewer, orchestrator, the `Spec` models and the shared Bedrock model |

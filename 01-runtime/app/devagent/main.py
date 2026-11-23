@@ -2,9 +2,11 @@
 
 Payload (the CLI sends a prompt string, so JSON goes inside "prompt"; a plain dict works too):
     {"action": "start",  "request": "Add a DELETE /items/{item_id} endpoint"}   returns a job ID at once
+    {"action": "run",    "request": "..."}                                       starts the job and streams events until it ends
     {"action": "status"}                                                         returns the job's progress
     {"action": "watch"}                                                          streams events until the job ends
-A job is keyed by the session ID, so each session runs one job at a time.
+A plain sentence means run, so a chat UI shows progress. A job is keyed by the session ID, so each session
+runs one job at a time, and the job keeps going if the client disconnects: reconnect with watch.
 """
 import asyncio
 import json
@@ -99,7 +101,7 @@ def _parse(payload) -> dict:
                 return parsed
         except ValueError:
             pass
-        return {"action": "start", "request": prompt}        # a plain sentence means start
+        return {"action": "run", "request": prompt}          # a plain sentence means run
     return payload
 
 
@@ -120,25 +122,34 @@ async def _follow(job: dict):
         await asyncio.sleep(1)
 
 
+def _begin(job_id: str, text) -> tuple[dict | None, dict | None]:
+    """Start a job for this session. Returns (job, None), or (None, rejection)."""
+    existing = JOBS.get(job_id)
+    if existing and existing["status"] in ("starting", "planning", "coding"):
+        return None, {"event": "rejected", "reason": "a job is already running, send watch to follow it", "job_id": job_id}
+    if not isinstance(text, str) or not text.strip():
+        return None, {"event": "rejected", "reason": 'start and run need a non-empty "request"'}
+    job = {"job_id": job_id, "status": "starting", "events": []}
+    JOBS[job_id] = job
+    threading.Thread(target=_run_job, args=(job, text), daemon=True).start()
+    return job, None
+
+
 @app.entrypoint
 async def invoke(payload, context):
     request = _parse(payload)
     job_id = getattr(context, "session_id", None) or "local"
     action = request.get("action", "start")
 
-    if action == "start":
-        existing = JOBS.get(job_id)
-        if existing and existing["status"] in ("starting", "planning", "coding"):
-            yield json.dumps({"event": "rejected", "reason": "a job is already running", "job_id": job_id})
+    if action in ("start", "run"):
+        job, rejection = _begin(job_id, request.get("request"))
+        if rejection:
+            yield json.dumps(rejection)
             return
-        text = request.get("request")
-        if not isinstance(text, str) or not text.strip():
-            yield json.dumps({"event": "rejected", "reason": 'start needs a non-empty "request"'})
-            return
-        job = {"job_id": job_id, "status": "starting", "events": []}
-        JOBS[job_id] = job
-        threading.Thread(target=_run_job, args=(job, text), daemon=True).start()
         yield json.dumps({"event": "accepted", "job_id": job_id})
+        if action == "run":
+            async for line in _follow(job):
+                yield line
     elif action == "status":
         yield json.dumps(_view(JOBS.get(job_id)))
     elif action == "watch":
