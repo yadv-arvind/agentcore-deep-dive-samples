@@ -7,6 +7,7 @@ files the model chooses to write, stay in the sandbox.
 One Sandbox per job. The session keeps its filesystem and installed packages between calls, and close()
 stops it, because an idle session still bills.
 """
+import importlib.util
 import json
 import re
 import shlex
@@ -18,6 +19,9 @@ from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from settings import settings
 
 REPO_DIR = "repo"                     # the repository, relative to the sandbox's working directory
+VENDOR_DIR = "vendor"                 # pytest and its pure-Python dependencies, uploaded at start, outside the repo
+PYTHONPATH = f'export PYTHONPATH="$PWD/{VENDOR_DIR}"'     # put before any command that runs pytest
+MAX_UPLOAD_CHARS = 400_000            # per writeFiles call
 SKIP_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
 SKIP_SUFFIXES = {".pyc", ".so"}
 MAX_FILE_BYTES = 200_000
@@ -41,6 +45,23 @@ for root, dirs, names in os.walk({REPO_DIR!r}):
             pass
 print(json.dumps(out if sys.argv[1] == "dump" else sorted(out)))
 """
+
+
+# pytest imports a few pygments names at start-up. They are only used to colour output, and the sample runs
+# pytest with --color=no, so these stubs stand in for the real package, which is large.
+PYGMENTS_STUBS = {
+    "pygments/__init__.py": (
+        "from pygments import util\n\n\ndef highlight(*args, **kwargs):\n"
+        "    raise RuntimeError('pygments is a stub in this sandbox: run pytest with --color=no')\n"
+    ),
+    "pygments/util.py": "class ClassNotFound(Exception):\n    pass\n\n\nclass OptionError(Exception):\n    pass\n",
+    "pygments/lexer.py": "class Lexer:\n    pass\n",
+    "pygments/lexers/__init__.py": "",
+    "pygments/lexers/diff.py": "from pygments.lexer import Lexer\n\n\nclass DiffLexer(Lexer):\n    pass\n",
+    "pygments/lexers/python.py": "from pygments.lexer import Lexer\n\n\nclass PythonLexer(Lexer):\n    pass\n",
+    "pygments/formatters/__init__.py": "",
+    "pygments/formatters/terminal.py": "class TerminalFormatter:\n    pass\n",
+}
 
 
 class SandboxError(RuntimeError):
@@ -68,6 +89,22 @@ def local_files(root: Path) -> dict[str, str]:
             files[rel.as_posix()] = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue                                       # binary file: tests do not need it
+    return files
+
+
+def vendored_files(modules: list[str]) -> dict[str, str]:
+    """The .py files of modules installed in this container, keyed by path relative to site-packages."""
+    files = {}
+    for name in modules:
+        spec = importlib.util.find_spec(name)
+        if spec is None or spec.origin is None:
+            raise SandboxError(f"{name} is not installed in this container, so it cannot be uploaded to the sandbox")
+        if spec.submodule_search_locations:                       # a package: take every .py file under it
+            root = Path(next(iter(spec.submodule_search_locations)))
+            for path in sorted(root.rglob("*.py")):
+                files[path.relative_to(root.parent).as_posix()] = path.read_text(encoding="utf-8")
+        else:                                                     # a single-file module such as py.py
+            files[Path(spec.origin).name] = Path(spec.origin).read_text(encoding="utf-8")
     return files
 
 
@@ -103,10 +140,15 @@ class Sandbox:
         except Exception as exc:
             self.client = None
             raise SandboxError(f"could not start a Code Interpreter session ({cfg.identifier}): {exc}") from exc
+        self._upload_vendor()
         self._ensure_packages()
         self._shell(f"rm -rf {REPO_DIR} && mkdir {REPO_DIR}")
         _, python_version = self._shell(f"{cfg.python} --version")
-        self.emit("sandbox_started", session_id=self.session_id, identifier=cfg.identifier, python=python_version.strip())
+        code, pytest_version = self._shell(f"{PYTHONPATH}\n{cfg.python} -m pytest --version")
+        if code != 0:
+            raise SandboxError(f"the pytest uploaded to the sandbox does not run: {pytest_version[-400:]}")
+        self.emit("sandbox_started", session_id=self.session_id, identifier=cfg.identifier,
+                  python=python_version.strip(), pytest=pytest_version.strip())
 
     def close(self) -> None:
         """Stop the session. Safe to call more than once, and never raises."""
@@ -150,25 +192,42 @@ class Sandbox:
     def _ensure_packages(self) -> None:
         """Check that the test dependencies are importable. Install the missing ones only if the config allows it."""
         cfg = settings.code_interpreter
-        check = (f"{cfg.python} -c \"import importlib.util as u,sys; print(' '.join(m for m in sys.argv[1:] "
+        check = (f"{PYTHONPATH}\n{cfg.python} -c \"import importlib.util as u,sys; print(' '.join(m for m in sys.argv[1:] "
                  f"if u.find_spec(m) is None))\" {shlex.join(cfg.packages)}")
         _, missing_out = self._shell(check)
         missing = missing_out.split()
+        pip_report = ""
         if missing and cfg.install_missing:
-            self._shell(f"{cfg.python} -m pip install -q {shlex.join(missing)}")
+            code, pip_output = self._shell(f"{cfg.python} -m pip install -q {shlex.join(missing)}")
+            pip_report = f" pip install exited {code}: {pip_output[-400:] or '(no output)'}"
             _, missing_out = self._shell(check)
             missing = missing_out.split()
         if missing:
             raise SandboxError(
                 f"the sandbox is missing {', '.join(missing)}, and it has no way to install them "
-                f"(code_interpreter.install_missing is {cfg.install_missing}). Use a custom interpreter with "
+                f"(code_interpreter.install_missing is {cfg.install_missing}).{pip_report} Use a custom interpreter with "
                 "PUBLIC network mode, or change code_interpreter.packages in resources.yaml. See the README."
             )
 
-    def _write(self, files: dict[str, str]) -> None:
-        directories = sorted({f"{REPO_DIR}/{PurePosixPath(name).parent.as_posix()}" for name in files})
+    def _write(self, files: dict[str, str], base: str = REPO_DIR) -> None:
+        directories = sorted({f"{base}/{PurePosixPath(name).parent.as_posix()}" for name in files})
         self._shell(f"mkdir -p {shlex.join(directories)}")
-        self._invoke("writeFiles", {"content": [{"path": f"{REPO_DIR}/{name}", "text": text} for name, text in files.items()]})
+        batch, size = [], 0                                       # several calls, so none is too large
+        for name, text in files.items():
+            batch.append({"path": f"{base}/{name}", "text": text})
+            size += len(text)
+            if size >= MAX_UPLOAD_CHARS:
+                self._invoke("writeFiles", {"content": batch})
+                batch, size = [], 0
+        if batch:
+            self._invoke("writeFiles", {"content": batch})
+
+    def _upload_vendor(self) -> None:
+        """Copy pytest and its pure-Python dependencies into the sandbox. It has no network, so pip cannot."""
+        files = vendored_files(settings.code_interpreter.upload_packages)
+        files.update(PYGMENTS_STUBS)
+        self._shell(f"rm -rf {VENDOR_DIR} && mkdir {VENDOR_DIR}")
+        self._write(files, base=VENDOR_DIR)
 
     def _tree(self, mode: str):
         code, out = self._shell(f"{settings.code_interpreter.python} -W ignore -c {shlex.quote(TREE_SCRIPT)} {mode}", raw=True)
@@ -212,7 +271,7 @@ class Sandbox:
         except ValueError as exc:
             return 2, f"could not read the pytest arguments: {exc}"
         try:
-            return self._shell(f"cd {REPO_DIR} && {settings.code_interpreter.python} -m pytest -q --color=no -p no:cacheprovider {arguments}")
+            return self._shell(f"{PYTHONPATH}\ncd {REPO_DIR} && {settings.code_interpreter.python} -m pytest -q --color=no -p no:cacheprovider {arguments}")
         except ReadTimeoutError:
             return 124, "pytest timed out inside the sandbox"
 

@@ -15,6 +15,9 @@ dependencies = [
     "pydantic >= 2.13.5",
     "pyyaml >= 6.0.3",
     "python-dotenv >= 1.2.4",
+    # Never run here. sandbox.py uploads pytest's files to the Code Interpreter sandbox, which has no network.
+    # The cap matters: agentcore package ignores uv.lock, and sandbox.py's pygments stubs fit this version.
+    "pytest >= 9.2, < 9.3",
 ]
 
 [tool.hatch.build.targets.wheel]

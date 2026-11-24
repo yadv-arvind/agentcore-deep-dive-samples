@@ -4,7 +4,9 @@ code_interpreter:
   identifier: aws.codeinterpreter.v1
   session_timeout_seconds: 1800
   python: python3
-  # Importable in the sandbox before the first test run: pytest plus what the target repo's tests import.
-  packages: [pytest, fastapi, httpx]
-  # Try pip install for a missing package. Sandbox network mode may not allow it, and the job fails with a clear message then.
-  install_missing: true
+  # Modules that must already import in the sandbox. The sandbox has no network, so pip cannot add any.
+  packages: [fastapi, httpx]
+  # Modules copied from this container into the sandbox at start: pytest and its pure-Python dependencies.
+  upload_packages: [pytest, _pytest, pluggy, iniconfig, packaging, py]
+  # Try pip install for a missing module. It needs a custom interpreter with public network access.
+  install_missing: false

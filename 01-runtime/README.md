@@ -83,6 +83,7 @@ In a second terminal, start a job and stream its events. The session ID header b
 ```bash
 curl -N -X POST localhost:8080/invocations \
   -H "Content-Type: application/json" \
+  -H "X-Agentcore-Local: 1" \
   -H "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id: local-session-0000000000000000000001" \
   -d '{"action":"run","request":"Add a GET /items/count endpoint that returns the number of items as {\"count\": n}, with a test"}'
 ```
@@ -251,6 +252,9 @@ The copies are no longer identical. A change in either place does not reach the 
 | `tools/run_pytest.py` | Starts Runtime's launcher, sets `LD_LIBRARY_PATH`, drops OpenTelemetry log lines, and exposes `pytest_output()` |
 
 ## Troubleshooting
+
+### Issue: `Forbidden: missing X-Agentcore-Local header`
+**Solution**: The local dev server in CLI 0.31.1 rejects any `POST` without an `X-Agentcore-Local` header, to stop other web pages from calling your local agent. It only checks that the header is present. Add `-H "X-Agentcore-Local: 1"` to the curl.
 
 ### Issue: `sh: tsc: command not found`
 **Solution**: The CDK project's dependencies are not installed. Run `npm install` in `agentcore/cdk/`, then repeat the deploy.

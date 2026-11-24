@@ -1,10 +1,14 @@
 from strands import Agent
 from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.tools.executors import SequentialToolExecutor
 from tools.files import list_files, read_file, write_file
 from tools.run_pytest import run_pytest
 from .model import model
 
+# Strands runs the tool calls from one model turn in parallel by default. A run_pytest that starts while a
+# write_file is still in flight tests the old files, so run them in order.
 coder = Agent(model=model, tools=[list_files, read_file, write_file, run_pytest],
+    tool_executor=SequentialToolExecutor(),
     conversation_manager=SlidingWindowConversationManager(window_size=20),
     system_prompt=("Implement exactly one task. Write code and tests, run the tests, read the real "
                    "failure output, fix only what is broken. Stop after 4 attempts and report the last failure. "
