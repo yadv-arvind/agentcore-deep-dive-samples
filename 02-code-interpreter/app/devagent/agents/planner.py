@@ -11,7 +11,9 @@ planner = Agent(model=model, tools=[list_files, read_file], system_prompt=(
     "Plan only against what you read: reuse the existing modules and "
     "structure, and do not add layers (routers, services, repositories, models, a database) that the code does "
     "not already have. Extend existing test files instead of creating new ones. Then produce a spec: "
-    "numbered requirements, a short design, and small tasks that each touch at most two files."))
+    "numbered requirements, a short design, and small tasks that each touch at most two files. "
+    "Each task includes its own tests, because the coder writes code and tests together. "
+    "Never create a task that only adds tests for another task."))
 
 
 def make_spec(request: str) -> Spec:

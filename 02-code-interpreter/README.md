@@ -164,7 +164,7 @@ cd ../..
 # Check that the project builds and synthesizes. Nothing is created.
 agentcore deploy --dry-run
 
-# Create the stack AgentCore-codeinterpreterdevagent-default
+# Create the stack AgentCore-codeinterpreter-default
 agentcore deploy -v
 agentcore status
 
@@ -238,7 +238,7 @@ A job whose sandbox cannot start ends in `failed` before any model call, with th
 | `progress.py` | Emits `file_written` |
 | `settings.py`, `resources.yaml` | A `code_interpreter` section |
 | `pyproject.toml`, `uv.lock` | `fastapi`, `httpx` and `strands-agents-tools` removed. `pytest` stays, capped at 9.2.x, only so `sandbox.py` can upload its files. |
-| `agentcore.json` | Project `codeinterpreterdevagent`, runtime `code_interpreter_devagent_sandbox`, so the stack does not collide with `01-runtime` |
+| `agentcore.json` | Project `codeinterpreter`, runtime `code_interpreter_devagent_sb`, so the stack does not collide with `01-runtime`. Runtime joins the project and runtime names with an underscore, and AWS limits the result to 48 characters. The deployed name `codeinterpreter_code_interpreter_devagent_sb` is 44. |
 | `cdk-stack.ts` | The Code Interpreter policy statement on the execution role |
 
 ## Experiments
@@ -263,6 +263,9 @@ A job whose sandbox cannot start ends in `failed` before any model call, with th
 | `aws-targets.json` | `agentcore/` | The account and region to deploy to. Git ignores it. |
 
 ## Troubleshooting
+
+### Issue: `Runtime name too long`
+**Solution**: Runtime joins the project and runtime names from `agentcore.json` with an underscore, and AWS limits the result to 48 characters. Shorten either name, then deploy again. Nothing is created when this check fails.
 
 ### Issue: `Forbidden: missing X-Agentcore-Local header`
 **Solution**: The local dev server in CLI 0.31.1 rejects any `POST` without an `X-Agentcore-Local` header, to stop other web pages from calling your local agent. It only checks that the header is present. Add `-H "X-Agentcore-Local: 1"` to the curl.
@@ -293,7 +296,7 @@ A job whose sandbox cannot start ends in `failed` before any model call, with th
 Remove the stack:
 
 ```bash
-aws cloudformation delete-stack --stack-name AgentCore-codeinterpreterdevagent-default --region <your-region>
+aws cloudformation delete-stack --stack-name AgentCore-codeinterpreter-default --region <your-region>
 ```
 
 This deletes the runtime, its execution role and the role's policy. The CDK bootstrap resources remain, and so can the runtime's CloudWatch log group. Code Interpreter sessions end by themselves at `session_timeout_seconds`. List any left running in the console, and a session that has not ended still bills until then.

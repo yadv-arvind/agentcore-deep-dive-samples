@@ -15,5 +15,5 @@ cdk/node_modules/
 .cli/deployed-state.json
 
 # Output of agentcore package
-/code_interpreter_devagent_sandbox/
-/code_interpreter_devagent_sandbox.zip
+/code_interpreter_devagent_sb/
+/code_interpreter_devagent_sb.zip
