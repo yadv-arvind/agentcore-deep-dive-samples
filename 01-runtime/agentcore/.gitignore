@@ -15,5 +15,5 @@ cdk/node_modules/
 .cli/deployed-state.json
 
 # Output of agentcore package
-/devagent/
-/devagent.zip
+/runtime_devagent/
+/runtime_devagent.zip

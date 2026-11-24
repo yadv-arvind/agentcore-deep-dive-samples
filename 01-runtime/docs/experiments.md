@@ -48,7 +48,7 @@ Every deploy that changes the code creates a new runtime version, and versions d
 | Step | Action | Expected |
 |:-----|:-------|:---------|
 | 1 | Find the latest version number `N` with `agentcore status --json` | The `devagent` runtime and its version |
-| 2 | Pin it: `agentcore add runtime-endpoint --runtime devagent --endpoint stable --version <N>`, then `agentcore deploy -y` | `agentcore status --type runtime-endpoint` lists `stable` |
+| 2 | Pin it: `agentcore add runtime-endpoint --runtime runtime_devagent --endpoint stable --version <N>`, then `agentcore deploy -y` | `agentcore status --type runtime-endpoint` lists `stable` |
 | 3 | Add `raise RuntimeError("broken on purpose")` near the top of `main.py`, then `agentcore deploy -y` | A new version, `N+1`, and the default endpoint follows it |
 | 4 | Invoke the default endpoint with `agentcore invoke` | `Runtime initialization time exceeded`, the error described in [Troubleshooting](../README.md#troubleshooting) |
 | 5 | Invoke `stable` through boto3 (below) | Works: the old version still serves traffic |

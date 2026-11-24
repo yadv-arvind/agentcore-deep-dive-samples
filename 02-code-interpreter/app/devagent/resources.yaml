@@ -1,0 +1,10 @@
+model_id: us.amazon.nova-pro-v1:0
+code_interpreter:
+  # The AWS-managed interpreter runs in sandbox network mode. A custom interpreter's ID goes here instead.
+  identifier: aws.codeinterpreter.v1
+  session_timeout_seconds: 1800
+  python: python3
+  # Importable in the sandbox before the first test run: pytest plus what the target repo's tests import.
+  packages: [pytest, fastapi, httpx]
+  # Try pip install for a missing package. Sandbox network mode may not allow it, and the job fails with a clear message then.
+  install_missing: true

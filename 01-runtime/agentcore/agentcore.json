@@ -1,15 +1,15 @@
 {
   "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
-  "name": "devagentruntime",
+  "name": "runtimedevagent",
   "version": 1,
   "managedBy": "CDK",
   "tags": {
     "agentcore:created-by": "agentcore-cli",
-    "agentcore:project-name": "devagentruntime"
+    "agentcore:project-name": "runtimedevagent"
   },
   "runtimes": [
     {
-      "name": "devagent",
+      "name": "runtime_devagent",
       "build": "CodeZip",
       "entrypoint": "main.py",
       "codeLocation": "app/devagent/",

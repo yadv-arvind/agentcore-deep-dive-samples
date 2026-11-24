@@ -116,7 +116,7 @@ agentcore deploy --dry-run
 agentcore deploy -v
 ```
 
-The deploy creates a CloudFormation stack named `AgentCore-devagentruntime-default` with three resources: the runtime's execution role, its policy, and the runtime `devagentruntime_devagent`. Confirm that it is ready:
+The deploy creates a CloudFormation stack named `AgentCore-runtimedevagent-default` with three resources: the runtime's execution role, its policy, and the runtime `runtimedevagent_runtime_devagent`. Confirm that it is ready:
 
 ```bash
 agentcore status
@@ -275,7 +275,7 @@ The copies are no longer identical. A change in either place does not reach the 
 Not yet verified. The stack is a standard CloudFormation stack, so this removes it:
 
 ```bash
-aws cloudformation delete-stack --stack-name AgentCore-devagentruntime-default --region <your-region>
+aws cloudformation delete-stack --stack-name AgentCore-runtimedevagent-default --region <your-region>
 ```
 
 This deletes the runtime, its execution role and the role's policy. The CDK bootstrap stack and the bootstrap bucket that holds the uploaded code zip remain, and so can the runtime's CloudWatch log group.

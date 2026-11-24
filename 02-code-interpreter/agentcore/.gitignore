@@ -1,0 +1,19 @@
+# Secrets (local environment files are never committed)
+.env.local
+
+# CDK Build Artifacts
+cdk/cdk.out/
+cdk/node_modules/
+
+# CLI Internals
+.cli/*
+
+# Ephemeral Staging
+.cache/*
+
+# Deployment state holds the account ID and resource ARNs
+.cli/deployed-state.json
+
+# Output of agentcore package
+/code_interpreter_devagent_sandbox/
+/code_interpreter_devagent_sandbox.zip

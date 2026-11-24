@@ -4,14 +4,14 @@ Where to find the [`01-runtime`](../README.md) agent in the AWS console after `a
 
 ## Find your agent in the AWS console
 
-The deploy creates one runtime, `devagentruntime_devagent`, plus a role and a policy. They show up in four services. Sign in to the account and region from `aws-targets.json` and select that region in the console's region menu first, because every list below is empty in the wrong region.
+The deploy creates one runtime, `runtimedevagent_runtime_devagent`, plus a role and a policy. They show up in four services. Sign in to the account and region from `aws-targets.json` and select that region in the console's region menu first, because every list below is empty in the wrong region.
 
 The AWS documentation names the AgentCore console pages but not every tab, so steps marked "not documented" are the ones the docs do not describe.
 
 ### 1. The runtime in the AgentCore console
 
 1. Open the [Agent Runtime page](https://console.aws.amazon.com/bedrock-agentcore/agents) in the Amazon Bedrock AgentCore console.
-2. In the **Runtime agents** list, find `devagentruntime_devagent`. Its ID is the `ApplicationAgentDevagentRuntimeIdOutput...` value printed by `agentcore deploy`, and `agentcore status` shows the same agent with its ARN.
+2. In the **Runtime agents** list, find `runtimedevagent_runtime_devagent`. Its ID is the `ApplicationAgent...RuntimeIdOutput...` value printed by `agentcore deploy`, and `agentcore status` shows the same agent with its ARN.
 3. Open it. The documentation names a **Tracing** pane with an **Edit** button, a **Log delivery** pane with an **Add** menu, and an **Identity** tab on this page.
 
 Not documented: where the console shows the versions, the `DEFAULT` endpoint and the sessions. The API lists versions and endpoints with `ListAgentRuntimeVersions` and `ListAgentRuntimeEndpoints`. Every deploy that changes the code adds a version, and the `DEFAULT` endpoint follows the latest.
@@ -19,14 +19,14 @@ Not documented: where the console shows the versions, the `DEFAULT` endpoint and
 ### 2. The stack in CloudFormation
 
 1. Open **CloudFormation** and choose **Stacks**.
-2. Select `AgentCore-devagentruntime-default`.
+2. Select `AgentCore-runtimedevagent-default`.
 3. Open the **Resources** tab. You should see three resources: the execution role, its policy, and the runtime.
 4. Open the **Outputs** tab for the runtime ID, the runtime ARN and the role ARN.
 
 ### 3. The execution role in IAM
 
 1. Open **IAM**, then **Roles**.
-2. Search for `AgentCore-devagentruntime`. The full name is in the role ARN under **Outputs**.
+2. Search for `AgentCore-runtimedevagent`. The full name is in the role ARN under **Outputs**.
 3. Open the role. The trust policy allows `bedrock-agentcore.amazonaws.com`, and the permissions cover model invocation, logs, X-Ray tracing and the configuration-bundle actions the CLI template adds.
 
 ### 4. Logs in CloudWatch
