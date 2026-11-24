@@ -283,11 +283,6 @@ This deletes the runtime, its execution role and the role's policy. The CDK boot
 > [!WARNING]
 > Deploying creates AWS resources through CDK, and model calls cost money. Run the clean-up when you finish.
 
-## Next steps
-
-1. Record what you observe in the [session and rollback experiments](docs/experiments.md) next to the expected results.
-2. Verify the clean-up steps and the CLI's own removal command.
-
 ## Additional resources
 
 - [AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html)
