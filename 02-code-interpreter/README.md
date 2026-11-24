@@ -1,6 +1,6 @@
-# Run the coder's tests in AgentCore Code Interpreter
+# Keep the repo and its tests in AgentCore Code Interpreter
 
-Move test execution out of the agent's own container and into a managed [Amazon Bedrock AgentCore Code Interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) sandbox. The planner, coder and reviewer from [`01-runtime`](../01-runtime/) are unchanged. Only where pytest runs is different.
+Host the planner, coder and reviewer from [`01-runtime`](../01-runtime/) on AgentCore Runtime, and move the repository itself into a managed [Amazon Bedrock AgentCore Code Interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) sandbox. Runtime runs the agents and the check. Every file the agents read or write, and every test run, happens in the sandbox.
 
 | Information | Details |
 |:------------|:--------|
@@ -17,9 +17,10 @@ Move test execution out of the agent's own container and into a managed [Amazon 
 ## Overview
 
 - **The same agents.** `01-runtime` copied to this folder, deployed as its own stack, so both samples can exist side by side.
-- **One sandbox per job.** `main.py` starts a Code Interpreter session before planning and stops it after the independent check, or when the job fails.
-- **A narrow tool.** The coder still writes files in the job's working copy with `file_write`. `run_pytest` copies the working copy into the sandbox and runs pytest there. The model cannot run any other command in the sandbox.
-- **An independent check that stays independent.** `verify.py` runs its test collection and final pytest in the same sandbox, so model-written code never runs in the Runtime container.
+- **The sandbox is the workspace.** `main.py` starts a Code Interpreter session before planning, uploads the bundled snapshot into it once, and stops the session after the check. The Runtime container never holds a working copy of the repo.
+- **File tools that act on the sandbox.** `list_files`, `read_file` and `write_file` replace the local `file_read` and `file_write`. They reject any path outside the repository, so a model-chosen path cannot reach the agent's own code.
+- **A narrow test tool.** `run_pytest` runs pytest in the sandbox. The model cannot run any other command there.
+- **An independent check that stays independent.** `verify.py` runs in Runtime. It fetches the final files and runs its test collection and final pytest through the sandbox, then judges the result in trusted code. A check that ran inside the sandbox could be fooled by what it checks.
 - **Sandbox network mode.** The sample uses the AWS-managed interpreter `aws.codeinterpreter.v1`. It fails early with a clear message if the sandbox lacks the test packages.
 
 ## Architecture
@@ -28,24 +29,27 @@ Move test execution out of the agent's own container and into a managed [Amazon 
 client (agentcore invoke --session-id <id>)
    │
    ▼
-AgentCore Runtime session (one microVM per session ID)        ← holds the agent's credentials
+AgentCore Runtime session (trusted: has the execution role's credentials)
    └─ main.py: background job
-        ├─ sandbox_started ──────────────────────────────┐
-        ├─ make_spec → orchestrator → coder              │   Code Interpreter session
-        │                 └─ file_write (working copy)   │   (isolated, no credentials)
-        │                 └─ run_pytest ── copy files ───►├─ repo/   pytest runs here
-        ├─ reviewer                                      │
-        ├─ verify.py: diff + collect + final pytest ────►│
-        └─ sandbox_stopped ──────────────────────────────┘
+        planner / orchestrator / coder / reviewer   (LLM loops, call Bedrock)
+        verify.py                                    (judges the result)
+              │  list_files · read_file · write_file · run_pytest · download
+              ▼
+Code Interpreter session (untrusted: no credentials, sandbox network mode)
+   └─ repo/   the only copy of the repository. Files are written and tests run here.
 ```
 
 | Component | Purpose |
 |:----------|:--------|
-| `sandbox.py` | `Sandbox`: starts and stops the session, checks packages, copies the working copy, runs pytest, reads the exit code |
-| `tools/run_pytest.py` | The coder's tool, and `pytest_output()` for `verify.py`. Both call the job's sandbox. |
+| `sandbox.py` | `Sandbox`: starts and stops the session, checks packages, loads the snapshot, reads, writes and lists files, dumps the repo, runs pytest, reads exit codes |
+| `tools/files.py` | `list_files`, `read_file`, `write_file`: the agents' only way to touch the repo |
+| `tools/run_pytest.py` | The coder's test tool, and `pytest_output()` for `verify.py` |
+| `verify.py` | The independent check. It compares the sandbox's final files with the bundled snapshot. |
 | `main.py` | Starts the sandbox first, so a broken sandbox fails the job before any model call |
 | `agentcore/cdk/lib/cdk-stack.ts` | Grants the runtime's execution role the Code Interpreter actions |
 | `scripts/probe_sandbox.py` | Checks what the sandbox provides, before you deploy |
+
+Why the agents stay in Runtime: they call Amazon Bedrock, so they need credentials and network access, and the sandbox has neither. Code Interpreter is a tool environment, not an agent host.
 
 ## Prerequisites
 
@@ -85,7 +89,7 @@ Read the output before you go on:
 |:------|:-----------------|:------------|
 | 1. Raw events | `result` with `structuredContent` or `content` text | `sandbox.py` reads both. Tell me the shape if it differs. |
 | 2. bash | `ok` then `exit=1` | `sandbox.py` runs every command through `bash -c` |
-| 4. `writeFiles` | `hi` | The service does not create parent directories. `sandbox.py` already creates them with `mkdir -p`. |
+| 4. `writeFiles` and read-back | `OK` | `DIFFERENT` means files do not round trip exactly, so diffs and rewrites would be wrong. Stop and report it. |
 | 5. Packages | `pytest`, `fastapi` and `httpx` all `True` | Go to Step 1b |
 | 6. pip | an install plan, not a network error | If it fails, sandbox network mode blocks pip |
 
@@ -113,7 +117,7 @@ curl -N -X POST localhost:8080/invocations \
   -d '{"action":"run","request":"Add a GET /items/count endpoint that returns the number of items as {\"count\": n}, with a test"}'
 ```
 
-You should see `sandbox_started` right after `accepted`, `tests_passed` or `tests_failed` events from the sandbox, and `sandbox_stopped` before `verified`.
+You should see `sandbox_started` and `snapshot_loaded` right after `accepted`, `file_written` and test events as the coder works, and `sandbox_stopped` before `verified`.
 
 ### 3. Set the deployment target and install the CDK dependencies
 
@@ -141,7 +145,7 @@ agentcore invoke --session-id sandbox-session-00000000000000000001 --stream "Add
 
 ### 5. Check that the tests ran in the sandbox
 
-The `sandbox_started` event carries the Code Interpreter session ID. The runtime's logs show the same job without any pytest process in the container.
+The `sandbox_started` event carries the Code Interpreter session ID, and `file_written` events name each file the coder wrote. Nothing is written to the container's disk, and the container runs no pytest process.
 
 ```bash
 agentcore logs --since 30m
@@ -149,21 +153,33 @@ agentcore logs --since 30m
 
 ## How it works
 
-### Why `run_pytest` copies the files
+### Why the repo lives in the sandbox
 
-The coder and the independent check both need the working copy, and `verify.py` compares it with the snapshot in the container. So the container keeps the working copy, and each test run replaces `repo/` in the sandbox with it: `rm -rf repo`, `mkdir -p`, then one `writeFiles` call. A file the coder deletes disappears in the sandbox too, and the model cannot forget to upload a change.
+The coder's `write_file` and `run_pytest` act on one copy, so there is nothing to sync and nothing to go stale. `file_write` from `strands_tools` ran in the Runtime container and accepted any path, including one that overwrote the agent's own code. `write_file` rejects absolute paths and `..`, and it writes only inside the sandbox's `repo/` directory.
 
-The session persists between runs, so anything installed with pip survives a retry.
+The session persists between calls, so anything installed with pip survives a retry.
 
-### Reading the exit code
+### What stays in Runtime
 
-`executeCommand` runs inside `bash -c` with stderr merged into stdout, and the script's last line prints `[exit code N]`. `sandbox.py` reads that marker instead of relying on how the service reports exit codes. A run with no marker raises `SandboxError`, and the job fails with the output.
+| Stays in Runtime | Why |
+|:-----------------|:----|
+| The planner, orchestrator, coder and reviewer | They call Bedrock, which needs the execution role |
+| `verify.py`'s judgement | The check must run outside the thing it checks. A `conftest.py` that fakes passing tests is caught by the diff, not by pytest. |
+| The bundled snapshot | The baseline for the diff. The sandbox gets a copy. |
+
+The check fetches the final files and runs the final pytest in the sandbox, and it reads the files after the pytest run, so the diff reflects the state the tests left.
+
+### Reading the exit code and file contents
+
+`executeCommand` runs inside `bash -c` with stderr merged into stdout, and the script's last line prints `[exit code N]`. `sandbox.py` reads that marker instead of relying on how the service reports exit codes. A run with no marker raises `SandboxError`, and the job fails with the output. File contents are read with `cat` and returned exactly as printed, and the whole repo is fetched in one call as JSON, so trailing newlines and line endings survive. Probe check 4 confirms the service preserves them.
 
 ### New events
 
 | Event | Meaning |
 |:------|:--------|
 | `sandbox_started` | The session ID, the interpreter identifier and the sandbox's Python version |
+| `snapshot_loaded` | The number of files uploaded from the bundled snapshot |
+| `file_written` | A `write_file` call succeeded, with the path |
 | `sandbox_stopped` | The session ended cleanly. `sandbox_stop_failed` carries the error. |
 
 A job whose sandbox cannot start ends in `failed` before any model call, with the cause in `error`.
@@ -173,11 +189,15 @@ A job whose sandbox cannot start ends in `failed` before any model call, with th
 | File | Difference |
 |:-----|:-----------|
 | `sandbox.py` | New |
+| `tools/files.py` | New. Replaces `file_read` and `file_write` from `strands_tools`. |
 | `tools/run_pytest.py` | Runs in the sandbox. The `cwd` argument and the Runtime launcher and `LD_LIBRARY_PATH` workarounds are gone. |
-| `verify.py` | Calls `pytest_output(args)` without `cwd`, which now runs in the sandbox |
-| `main.py` | Starts and stops the sandbox, and adds the `starting_sandbox` status |
+| `agents/planner.py`, `coder.py`, `reviewer.py` | Use the sandbox file tools. The prompts name them. |
+| `tools/review_change.py` | Reads the changed files from the sandbox |
+| `verify.py` | Compares the sandbox's files with the snapshot. Paths are checked against the sandbox's file list. |
+| `main.py` | No temp directory or `chdir`. Starts the sandbox, loads the snapshot, stops the sandbox, and adds the `starting_sandbox` status. |
+| `progress.py` | Emits `file_written` |
 | `settings.py`, `resources.yaml` | A `code_interpreter` section |
-| `pyproject.toml`, `uv.lock` | `pytest`, `fastapi` and `httpx` removed. The container no longer runs tests. |
+| `pyproject.toml`, `uv.lock` | `pytest`, `fastapi`, `httpx` and `strands-agents-tools` removed. The container no longer runs tests or local file tools. |
 | `agentcore.json` | Project `codeinterpreterdevagent`, runtime `code_interpreter_devagent_sandbox`, so the stack does not collide with `01-runtime` |
 | `cdk-stack.ts` | The Code Interpreter policy statement on the execution role |
 
@@ -208,6 +228,9 @@ A job whose sandbox cannot start ends in `failed` before any model call, with th
 
 ### Issue: `the sandbox is missing fastapi, httpx ...`
 **Solution**: The interpreter lacks the packages and cannot install them. See Step 1b.
+
+### Issue: `not a path inside the repository`
+**Solution**: A tool call used an absolute path or `..`. The tool returns the error to the model, which retries with a relative path. Repeated errors mean the prompt or the spec has absolute paths.
 
 ### Issue: `the sandbox gave no exit code for ...`
 **Solution**: `bash` is missing, or the command was not run through a shell. Run the probe and read check 2.

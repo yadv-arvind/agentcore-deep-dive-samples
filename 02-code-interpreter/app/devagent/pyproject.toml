@@ -12,7 +12,6 @@ dependencies = [
     "bedrock-agentcore[strands-agents] >= 1.18.1",
     "botocore[crt] >= 1.35.0",
     "strands-agents >= 1.58.1, < 1.63",
-    "strands-agents-tools >= 0.8.9, < 0.9",
     "pydantic >= 2.13.5",
     "pyyaml >= 6.0.3",
     "python-dotenv >= 1.2.4",

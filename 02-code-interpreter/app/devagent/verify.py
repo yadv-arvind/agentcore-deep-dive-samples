@@ -1,39 +1,26 @@
 """Check a job's result from the outside, without trusting what the agents report.
 
-The final test run uses the same Code Interpreter sandbox as the coder, so model-written code never runs here.
-
-The job works on a copy of the bundled snapshot, so the snapshot is the baseline: every difference between
-the two is a change the agents made.
+The job works in a Code Interpreter sandbox that started as a copy of the bundled snapshot, so the snapshot is
+the baseline: every difference between the two is a change the agents made. The judgement runs here, in the
+Runtime container. The sandbox only supplies the files and runs the tests, because a check that ran inside the
+thing it checks could be fooled by it.
 """
 import difflib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from progress import _test_summary
+from sandbox import SandboxError, clean_path, local_files
 from tools.run_pytest import pytest_output
 
-SKIP_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
 MAX_DIFF_CHARS = 6000
 
 
-def _read_files(root: Path) -> dict[str, list[str]]:
-    files = {}
-    for path in root.rglob("*"):
-        rel = path.relative_to(root)
-        if path.is_file() and not SKIP_DIRS & set(rel.parts) and path.suffix != ".pyc" and path.name != ".DS_Store":
-            try:
-                files[rel.as_posix()] = path.read_text(errors="ignore").splitlines()
-            except OSError:
-                files[rel.as_posix()] = []
-    return files
-
-
-def compare(baseline: Path, repo: Path) -> tuple[dict[str, tuple[int, int]], str]:
-    """({path: (lines added, lines deleted)}, unified diff) for files that differ from the baseline."""
-    before, after = _read_files(baseline), _read_files(repo)
+def compare(before: dict[str, str], after: dict[str, str]) -> tuple[dict[str, tuple[int, int]], str]:
+    """({path: (lines added, lines deleted)}, unified diff) for files that differ. Both map path to contents."""
     changes, diffs = {}, []
     for name in sorted(before.keys() | after.keys()):
-        old, new = before.get(name, []), after.get(name, [])
-        if old == new:
+        old, new = before.get(name, "").splitlines(), after.get(name, "").splitlines()
+        if before.get(name) == after.get(name):
             continue
         lines = list(difflib.unified_diff(old, new, f"a/{name}", f"b/{name}", lineterm="", n=2))
         added = sum(1 for line in lines if line.startswith("+") and not line.startswith("+++"))
@@ -46,39 +33,47 @@ def compare(baseline: Path, repo: Path) -> tuple[dict[str, tuple[int, int]], str
     return changes, diff
 
 
-def collect_tests(repo: Path) -> set[str]:
+def collect_tests() -> set[str]:
     """Test ids such as tests/test_items.py::test_health."""
     _, output = pytest_output("--collect-only")
     return {line.strip() for line in output.splitlines() if "::" in line}
 
 
-def spec_files(spec, repo: Path) -> set[str]:
+def _relative(name: str) -> str | None:
+    """A spec path as a path inside the repository, or None when it points outside."""
+    try:
+        return clean_path(name)
+    except SandboxError:
+        return None
+
+
+def spec_files(spec) -> set[str]:
     """The files the spec names, as paths relative to the repo."""
-    names = set()
-    for task in spec.tasks:
-        for name in task.files:
-            path = (repo / name).resolve()                      # an absolute name replaces the repo prefix
-            names.add(path.relative_to(repo).as_posix() if repo in path.parents else name)
-    return names
+    return {rel for task in spec.tasks for name in task.files if (rel := _relative(name)) is not None}
 
 
-def check_spec_paths(spec, repo: Path) -> list[str]:
+def check_spec_paths(spec, files: list[str]) -> list[str]:
     """Problems with the paths in a spec: outside the repo, or in a directory that does not exist."""
+    known = set(files)
+    directories = {"."} | {parent.as_posix() for name in files for parent in PurePosixPath(name).parents}
     problems = []
     for task in spec.tasks:
         for name in task.files:
-            path = (repo / name).resolve()
-            if path != repo and repo not in path.parents:
+            rel = _relative(name)
+            if rel is None:
                 problems.append(f"{name}: outside the repository")
-            elif not path.exists() and not path.parent.is_dir():
-                problems.append(f"{name}: directory {path.parent.relative_to(repo)} does not exist")
+            elif rel not in known and PurePosixPath(rel).parent.as_posix() not in directories:
+                problems.append(f"{name}: directory {PurePosixPath(rel).parent.as_posix()} does not exist")
     return problems
 
 
-def verify(baseline: Path, repo: Path, spec, tests_before: set[str]) -> dict:
-    """Compare the repo with the baseline and run its tests. Returns the report that main.py emits."""
-    changes, diff = compare(baseline, repo)
-    in_scope = spec_files(spec, repo)
+def verify(baseline: Path, box, spec, tests_before: set[str]) -> dict:
+    """Compare the sandbox's repo with the baseline and run its tests. Returns the report that main.py emits."""
+    tests_after = collect_tests()
+    code, output = pytest_output("")
+    changes, diff = compare(local_files(baseline), box.download_all())   # read last, so it is the final state
+
+    in_scope = spec_files(spec)
     problems = []
     if not changes:
         problems.append("no files changed")
@@ -87,12 +82,9 @@ def verify(baseline: Path, repo: Path, spec, tests_before: set[str]) -> dict:
             problems.append(f"{name} changed but is not in the spec")
         if deleted > added:
             problems.append(f"{name} lost more lines than it gained (+{added} -{deleted})")
-
-    tests_after = collect_tests(repo)
     removed = sorted(tests_before - tests_after)
     if removed:
         problems.append("tests that existed before are gone: " + ", ".join(removed))
-    code, output = pytest_output("")
     if code != 0:
         problems.append("pytest fails")
     return {

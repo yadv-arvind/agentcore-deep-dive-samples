@@ -1,22 +1,23 @@
 import re
-from pathlib import Path
 
 from strands import tool
 
+import sandbox
 from agents.reviewer import reviewer
 
 MAX_FILE_CHARS = 8000
 
 
 def file_blocks(changed_files: str) -> str:
-    """The current contents of the named files, read here so the reviewer does not depend on finding them."""
+    """The current contents of the named files, read from the sandbox so the reviewer does not depend on finding them."""
     blocks = []
     for name in dict.fromkeys(n for n in re.split(r"[,\s]+", changed_files) if n and n != "none"):
-        path = Path(name)
-        if path.is_file() and ".." not in path.parts and not path.is_absolute():
-            blocks.append(f"File: {name}\n```\n{path.read_text(errors='ignore')[:MAX_FILE_CHARS]}\n```")
-        else:
+        try:
+            text = sandbox.active().read_file(name)
+        except sandbox.SandboxError:
             blocks.append(f"File: {name}\n(not found in the repository)")
+        else:
+            blocks.append(f"File: {name}\n```\n{text[:MAX_FILE_CHARS]}\n```")
     return "\n\n".join(blocks)
 
 

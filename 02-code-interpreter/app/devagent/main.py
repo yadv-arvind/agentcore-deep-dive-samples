@@ -1,7 +1,7 @@
 """AgentCore Runtime entrypoint: run the spec-first coding agents as a background job.
 
-Tests run in an AgentCore Code Interpreter sandbox, one session per job: sandbox_started and sandbox_stopped
-events mark its life, and model-written code never runs in this container.
+The repository lives in an AgentCore Code Interpreter sandbox, one session per job: sandbox_started and sandbox_stopped
+events mark its life. This container only hosts the agents and the check, and never holds a copy of the repo.
 
 Payload (the CLI sends a prompt string, so JSON goes inside "prompt"; a plain dict works too):
     {"action": "start",  "request": "Add a DELETE /items/{item_id} endpoint"}   returns a job ID at once
@@ -14,8 +14,6 @@ runs one job at a time, and the job keeps going if the client disconnects: recon
 import asyncio
 import json
 import os
-import shutil
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -24,9 +22,6 @@ import boto3
 
 # settings.py needs AWS_REGION. Runtime and local dev may not set it, so fall back to the SDK's region.
 os.environ.setdefault("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION") or boto3.Session().region_name or "us-west-2")
-# file_write asks for confirmation before each write, and nobody can answer inside a container.
-# This is safe here because the agents write only to a throwaway copy of the workspace.
-os.environ.setdefault("BYPASS_TOOL_CONSENT", "true")
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
@@ -58,54 +53,46 @@ for _agent in (orchestrator, coder, reviewer):
     _agent.hooks.add_hook(_progress)
 
 
-def _list_files(root: Path) -> str:
-    skip = {".git", ".venv", "__pycache__", ".pytest_cache"}
-    names = [str(p.relative_to(root)) for p in root.rglob("*")
-             if p.is_file() and not skip & set(p.relative_to(root).parts) and p.name != ".DS_Store"]
-    return "\n".join(sorted(names))
-
-
 def _run_job(job: dict, request: str) -> None:
     ping_task = app.add_async_task("devagent_build")        # /ping reports HealthyBusy until this completes
     _current["job"] = job
     box = None
     try:
-        repo = Path(tempfile.mkdtemp(prefix="job-")).resolve() / "shop-api"
-        shutil.copytree(WORKSPACE, repo)
-        os.chdir(repo)                                       # the agents use relative paths
-        box = Sandbox(repo, emit=lambda name, **fields: _emit(job, name, **fields))
+        box = Sandbox(emit=lambda name, **fields: _emit(job, name, **fields))
         sandbox.activate(box)
         job["status"] = "starting_sandbox"
         box.start()                                          # fail before any model call if the sandbox is unusable
+        _emit(job, "snapshot_loaded", files=box.load(WORKSPACE))   # the only copy of the repo is now in the sandbox
+        files = box.list_files()
         job["status"] = "planning"
         _emit(job, "planning")
         spec = make_spec(
-            f"{request}\n\nThe current directory is the repository. Its files, as relative paths:\n"
-            f"{_list_files(repo)}\n\nRead the files the change touches with exactly these relative paths before planning."
+            f"{request}\n\nThe repository's files, as relative paths from its root:\n"
+            f"{chr(10).join(files)}\n\nRead the files the change touches with exactly these relative paths before planning."
         )
         if not spec.tasks:
             raise RuntimeError("The planner returned a spec with no tasks.")
-        invented = check_spec_paths(spec, repo)
+        invented = check_spec_paths(spec, files)
         if invented:
             raise RuntimeError("The spec refers to paths that do not exist, so the plan is probably invented: " + "; ".join(invented))
         _emit(job, "spec_ready", tasks=[t.title for t in spec.tasks])
-        tests_before = collect_tests(repo)
+        tests_before = collect_tests()
         _emit(job, "baseline", tests=len(tests_before))
         job["status"] = "coding"
         spec_json = spec.model_dump_json(indent=2)
         result = orchestrator(
-            f"Repository: {repo}\n\nSpec:\n{spec_json}\n\n"
+            f"Spec:\n{spec_json}\n\n"
             "Implement every task in the spec, then call review_change for that task, whatever the test result. "
             "Report the outcome."
         )
         job["summary"] = str(result)
         job["status"] = "verifying"
-        report = verify(WORKSPACE, repo, spec, tests_before)
-        box.close()
+        report = verify(WORKSPACE, box, spec, tests_before)
         reviews = sum(1 for e in job["events"] if e["event"] == "task_reviewed")
         if reviews < len(spec.tasks):                        # the orchestrator skipped a review: do it from code
             verdict = str(review_change(spec_json, ", ".join(report["files"]) or "none"))
             _emit(job, "final_review", approved=verdict.strip().startswith("APPROVE"), reason=verdict[:400])
+        box.close()                                          # everything that needs the repo is done
         _emit(job, "changes", diff=report.pop("diff"))
         _emit(job, "verified", **report)
         job["verified"] = report["ok"]

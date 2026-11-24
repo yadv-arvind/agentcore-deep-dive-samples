@@ -2,7 +2,7 @@
 
 Starts one session on the interpreter named in app/devagent/resources.yaml (the AWS-managed one by default),
 prints the raw shape of a command response, and checks each thing the sample relies on:
-a shell, writing files, Python, the test packages, and pip. It stops the session when it ends.
+a shell, writing files and reading them back exactly, Python, the test packages, and pip. It stops the session when it ends.
 
 Run from 02-code-interpreter:
     uv run --no-project --with "bedrock-agentcore>=1.18.1" --with pyyaml python scripts/probe_sandbox.py
@@ -48,8 +48,12 @@ try:
     print("2. bash and exit codes:", sh(client, "echo ok; false; echo exit=$?"))
     print("3. Python:", sh(client, f"{cfg['python']} --version"))
 
-    client.invoke("writeFiles", {"content": [{"path": "probe/sub/hello.txt", "text": "hi"}]})
-    print("4. writeFiles into a new subdirectory:", sh(client, "cat probe/sub/hello.txt"))
+    # The sample reads files back with `cat`, so a file must come back exactly: CRLF, trailing spaces, no final newline.
+    sh(client, "mkdir -p probe/sub")
+    sent = "a\r\nb  \n\nno newline"
+    client.invoke("writeFiles", {"content": [{"path": "probe/sub/odd.txt", "text": sent}]})
+    got = sh(client, f"{cfg['python']} -c \"print(repr(open('probe/sub/odd.txt', newline='').read()))\"")
+    print(f"4. writeFiles then read back, exact: {'OK' if got == repr(sent) else 'DIFFERENT'}  sent={sent!r}  stored={got}")
 
     check = ("import importlib.util as u,sys; print({m: u.find_spec(m) is not None for m in sys.argv[1:]})")
     print("5. Test packages importable:", sh(client, f"{cfg['python']} -c {shlex.quote(check)} {shlex.join(cfg['packages'])}"))

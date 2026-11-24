@@ -66,6 +66,9 @@ class ProgressHook(HookProvider):
                 self.emit("tests_passed", summary=_test_summary(text))
             else:
                 self.emit("tests_failed", summary=_test_summary(text), failures=_failures(text))
+        elif name == "write_file":
+            if text.startswith("wrote "):
+                self.emit("file_written", path=str(event.tool_use.get("input", {}).get("path", "")))
         elif name == "review_change":
             approved = text.startswith("APPROVE")
             fields = {} if approved else {"reason": text[:400]}

@@ -1,13 +1,12 @@
 from strands import Agent
-from strands_tools import file_read
-
+from tools.files import list_files, read_file
 from .model import model
 from .spec import Spec
 
-planner = Agent(model=model, tools=[file_read], system_prompt=(
-    "You are a software planner. Work with relative paths from the current directory, which is the repository. "
-    "If you were not given a file listing, call file_read with mode 'find' and the glob '**/*.py'. Then view "
-    "every file the change touches with mode 'view', copying paths exactly from the listing. A failed read "
+planner = Agent(model=model, tools=[list_files, read_file], system_prompt=(
+    "You are a software planner. Work with relative paths from the repository root. "
+    "If you were not given a file listing, call list_files. Then call read_file on "
+    "every file the change touches, copying paths exactly from the listing. A failed read "
     "means your path was wrong, so list again instead of assuming the file is missing. "
     "Plan only against what you read: reuse the existing modules and "
     "structure, and do not add layers (routers, services, repositories, models, a database) that the code does "
