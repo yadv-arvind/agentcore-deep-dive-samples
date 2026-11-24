@@ -243,11 +243,13 @@ A job whose sandbox cannot start ends in `failed` before any model call, with th
 
 ## Experiments
 
-**Experiment 1: a failure comes back from the sandbox.** Ask for a change that breaks a test, such as "Make GET /health return {\"status\": \"up\"}". Expect `tests_failed` with the `FAILED` line, then a fix on a later attempt in the same session.
+[`docs/experiments.md`](docs/experiments.md) has three experiments to run once the deploy works.
 
-**Experiment 2: an orphaned session.** Set `session_timeout_seconds` to `3600` in `resources.yaml`, then kill the local dev server in the middle of a job. In the console, find the session that never reached `sandbox_stopped`. A job that fails normally always stops its session.
-
-**Experiment 3: the package gap.** Add a package the sandbox lacks, such as `requests`, to `code_interpreter.packages`. The job fails at `starting_sandbox` with `the sandbox is missing requests`. Then use a custom interpreter in public network mode with `install_missing: true`, as in Step 1b, and compare.
+| Experiment | What it shows |
+|:-----------|:--------------|
+| A failure comes back from the sandbox | `tests_failed` carries pytest's assertion lines, and the fix runs in the same session. Includes the output of a real deployed run. |
+| An orphaned session | A job that fails normally stops its sandbox session, and a killed one leaves it running until the timeout |
+| The package gap | The job fails at `starting_sandbox` when the sandbox lacks a package |
 
 ## Configuration
 
@@ -307,7 +309,7 @@ This deletes the runtime, its execution role and the role's policy. The CDK boot
 ## Next steps
 
 - **Compare** → run the same request against [`01-runtime`](../01-runtime/) and diff the event streams.
-- **Break it on purpose** → work through the experiments above, and note what you see in each.
+- **Break it on purpose** → work through the [experiments](docs/experiments.md), and note what you see in each.
 
 ## Additional resources
 
